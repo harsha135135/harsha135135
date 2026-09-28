@@ -180,24 +180,30 @@ def check_loop(view, frames, render_frame, base) -> str:
 
 
 def check_print_job() -> str:
+    """Fly one loop's print jobs in from far away, with nothing else around."""
     seed = BLOCK.at(*comp.SEED_AT)
-    lead = 400                                   # fly every glider in from 100 diagonals away
-    state = set(seed)
-    for release, g in comp.print_job_gliders():
-        state |= comp.rewind_glider(g, release + lead)
-    state = frozenset(state)
-    farm_at = lead + comp.PRINT_SCHEDULE[1] - 30  # before the second glider comes near
-    world = advance(state, farm_at)
     sx, sy = comp.SEED_AT
-    farm = window(world, sx - 12, sy - 14, 26, 20)       # the build volume only
-    beehives = sum(1 for dx in range(-8, 9) for dy in range(-12, 6)
-                   for hive in (BEEHIVE, BEEHIVE.rotate(1)) if hive.at(sx + dx, sy + dy) <= farm)
-    if len(farm) != 24 or beehives != 4:
-        raise AssertionError(f"expected a honey farm (4 beehives, 24 cells) at gen {farm_at}")
-    end = advance(world, lead + comp.LOOP - farm_at)
+    lead = 400                                   # every glider starts ≥100 diagonals away
+    jobs = comp.LOOP // comp.PRINT_PERIOD
+    state = set(seed)
+    for k in range(jobs):
+        for release, g in comp.print_job_gliders():
+            state |= comp.rewind_glider(g, lead + k * comp.PRINT_PERIOD + release)
+    state = frozenset(state)
+    t = 0
+    for k in range(jobs):
+        farm_at = lead + k * comp.PRINT_PERIOD + comp.PRINT_SCHEDULE[1] - 30
+        state, t = advance(state, farm_at - t), farm_at
+        farm = window(state, sx - 12, sy - 14, 26, 20)   # the build volume only
+        beehives = sum(1 for dx in range(-8, 9) for dy in range(-12, 6)
+                       for hive in (BEEHIVE, BEEHIVE.rotate(1)) if hive.at(sx + dx, sy + dy) <= farm)
+        if len(farm) != 24 or beehives != 4:
+            raise AssertionError(f"job {k + 1}: expected a honey farm (4 beehives) at gen {farm_at}")
+    end = advance(state, lead + comp.LOOP - t)
     if end != seed:
-        raise AssertionError("print job does not return to the seed block")
-    return "5-glider salvo: block → honey farm (4 beehives) → … → the identical block"
+        raise AssertionError("print jobs do not return to the seed block")
+    return (f"{jobs} jobs per loop, 5 gliders each: block → honey farm (4 beehives) → … → "
+            "the identical block")
 
 
 def check_manifest(decoded: list[set]) -> str:

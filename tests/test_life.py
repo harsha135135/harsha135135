@@ -10,7 +10,8 @@ from life import composition as comp
 from life.engine import advance, bounding_box, next_generation, period, run, update_ages, window
 from life.patterns import (
     BEACON, BEEHIVE, BLINKER, BLOCK, BOAT, CATALOGUE, CLOCK, EATER, GLIDER, GOSPER_GLIDER_GUN,
-    LOAF, LWSS, PENTADECATHLON, POND, PULSAR, TOAD, TUB, Pattern, glider_heading,
+    KOKS_GALAXY, LOAF, LWSS, MOLD, OCTAGON_2, PENTADECATHLON, POND, PULSAR, TOAD, TUB, Pattern,
+    glider_heading,
 )
 from life.verify import reference_step
 
@@ -73,6 +74,7 @@ def test_blinker_flips_and_returns_after_two_generations():
 
 
 @pytest.mark.parametrize("pattern, p", [(TOAD, 2), (BEACON, 2), (CLOCK, 2), (PULSAR, 3),
+                                        (MOLD, 4), (OCTAGON_2, 5), (KOKS_GALAXY, 8),
                                         (PENTADECATHLON, 15)])
 def test_oscillator_periods(pattern, p):
     assert period(pattern.cells, 40) == p
@@ -165,13 +167,21 @@ def scene():
 
 def test_every_part_behaves_like_its_pattern_on_its_own(scene):
     for part in scene.parts:
-        if part.period in (1, 2, 3, 15):
+        if part.period not in (0, 30):
             assert period(part.cells, 30) == part.period, part.name
 
 
-def test_all_machinery_together_is_period_30(scene):
+def test_all_machinery_together_has_a_period_dividing_the_loop(scene):
     fixed = frozenset().union(*(p.cells for p in scene.parts if p.period not in (0, 30)))
-    assert period(fixed, 30) is not None and 30 % period(fixed, 30) == 0
+    p = period(fixed, comp.LOOP)
+    assert p is not None and comp.LOOP % p == 0 and comp.LOOP % 30 == 0
+
+
+def test_nothing_stands_in_the_meteor_lanes(scene):
+    lo, hi = comp.meteor_lanes()
+    for part in scene.parts:
+        if part.period:
+            assert all(not lo - 4 <= x + y <= hi + 4 for x, y in part.cells), part.name
 
 
 def test_rewind_glider_is_exact():
@@ -222,7 +232,7 @@ def test_gif_is_an_exact_picture_of_conway(banner):
         assert im.size == (1400, 500)
         assert im.n_frames == comp.LOOP
         assert im.info.get("loop") == 0
-    assert GIF.stat().st_size < 3_000_000
+    assert GIF.stat().st_size < 5_000_000
     check_gif(GIF, v, frames)
 
 

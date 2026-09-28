@@ -26,7 +26,7 @@ from .renderer import Caption, View, base_image, render
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
 
-FRAME_MS = 60                         # one generation per frame (~16.7 gen/s)
+FRAME_MS = 30                         # one generation per frame (~33 gen/s)
 PREVIEW_GEN = comp.START + 110        # honey farm sitting on the bed
 TRANSPARENT = 255                     # palette slot used for "unchanged since last frame"
 

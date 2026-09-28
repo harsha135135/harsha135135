@@ -202,6 +202,40 @@ PENTADECATHLON = Pattern.from_picture("pentadecathlon", """
 ..#....#..
 """).rotate(1)                                                         # p15
 
+# Jan Kok, 1971: sixteen cells that wind and unwind like a spiral galaxy. Period 8;
+# its arms reach two cells beyond the 9×9 box while it turns.
+KOKS_GALAXY = Pattern.from_picture("Kok's galaxy", """
+##.######
+##.######
+##.......
+##.....##
+##.....##
+##.....##
+.......##
+######.##
+######.##
+""")                                                                   # p8
+
+MOLD = Pattern.from_picture("mold", """
+...##.
+..#..#
+#..#.#
+....#.
+#.##..
+.#....
+""")                                                                   # p4
+
+OCTAGON_2 = Pattern.from_picture("octagon 2", """
+...##...
+..#..#..
+.#....#.
+#......#
+#......#
+.#....#.
+..#..#..
+...##...
+""")                                                                   # p5
+
 # --- spaceships -----------------------------------------------------------------
 
 GLIDER = Pattern.from_picture("glider", """
@@ -248,4 +282,7 @@ CATALOGUE: dict[str, tuple[Pattern, int]] = {
     "clock": (CLOCK, 2),
     "pulsar": (PULSAR, 3),
     "pentadecathlon": (PENTADECATHLON, 15),
+    "mold": (MOLD, 4),
+    "octagon 2": (OCTAGON_2, 5),
+    "Kok's galaxy": (KOKS_GALAXY, 8),
 }

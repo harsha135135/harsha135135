@@ -9,7 +9,8 @@ moves it forward. Regions are placed so that each machine keeps working:
              ◄── slow-salvo "print job": 5 gliders that build a honey farm and
                  take it apart again, back into the exact seed block
     FLIGHT   X-frame quadcopter with four blinker propellers
-    SKY      Orion with M42 as a pulsar, a telescope aimed at it, twinkling stars
+    SKY      Orion with M42 as a pulsar, a telescope aimed at it, Kok's galaxy turning,
+             twinkling stars and a meteor shower of gliders
 
 Coordinates are world cells: x to the right, y downwards. The banner shows
 the rectangle ``[0, COLS) × [0, ROWS)``.
@@ -27,16 +28,18 @@ from dataclasses import dataclass, field
 
 from .engine import Cell, State, advance, next_generation
 from .patterns import (
-    BLINKER, BLOCK, EATER, GLIDER, GOSPER_GLIDER_GUN, PENTADECATHLON, POND, PULSAR, TUB,
-    Pattern, union,
+    BLINKER, BLOCK, EATER, GLIDER, GOSPER_GLIDER_GUN, KOKS_GALAXY, MOLD, OCTAGON_2,
+    PENTADECATHLON, POND, PULSAR, TUB, Pattern, glider_heading, union,
 )
 
 COLS, ROWS = 280, 96            # visible window, in cells
-LOOP = 300                      # generations per GIF loop; multiple of 2, 3, 15 and 30
+LOOP = 600                      # generations per GIF loop; multiple of 2, 3, 4, 5, 8, 15, 30
 START = 600                     # first displayed generation (stream full, colours settled)
-# Salvo copies: one print per loop. Copy -1 runs just before START so the seed block's
-# age (and therefore its colour) is the same at START and at START + LOOP.
-PRINT_COPIES = range(-1, 3)
+# The printer runs a job every PRINT_PERIOD generations: twice per loop. Copies of the
+# salvo run from generation 0 on, so the seed block's age (and therefore its colour) is
+# the same at START and at START + LOOP, and continue past START + 2·LOOP.
+PRINT_PERIOD = LOOP // 2
+PRINT_COPIES = range(-START // PRINT_PERIOD, 2 * LOOP // PRINT_PERIOD + 1)
 
 # --- anchors ---------------------------------------------------------------------------
 
@@ -45,6 +48,8 @@ GUN_AT = (5, 5)
 PRINTER = dict(x=92, y=24, nx=32, ny=23)      # block lattice: x 92…186, y 24…91
 SEED_AT = (140, 67)                           # the build plate's origin block
 DRONE_AT = (152, 10)                          # centre of the quadcopter
+GALAXY_AT = (250, 3)                          # Kok's galaxy, top-right sky
+METEOR = glider_heading("sw")
 
 # --- parts and the scene ---------------------------------------------------------------
 
@@ -105,6 +110,11 @@ def frame_points(nx, ny):
 def diag(c: Cell) -> int:
     """Lane coordinate of a south-east glider: constant along its path."""
     return c[0] - c[1]
+
+
+def antidiag(c: Cell) -> int:
+    """Lane coordinate of a south-west glider (a meteor): constant along its path."""
+    return c[0] + c[1]
 
 
 def keep_clear(cells: State, lanes: tuple[int, int], rows: tuple[int, int]) -> State:
@@ -275,21 +285,23 @@ def build_drone(scene: Scene) -> None:
 
 
 def build_space_region(scene: Scene) -> None:
-    """Orion, the telescope aimed at M42, and a few stars elsewhere in the sky.
+    """Orion, the telescope aimed at M42, Kok's galaxy, and stars elsewhere in the sky.
 
     Orion's Nebula (M42, under the belt) is the classic first astrophotography
-    target; here it is a pulsar, the brightest period-3 oscillator.
+    target; here it is a pulsar, the brightest period-3 oscillator. Betelgeuse, a
+    pulsating variable star, is a mold (period 4).
     """
     # Orion, roughly as it stands in the evening sky (x right, y down).
     orion = [
-        (BLINKER, 202, 9, "Betelgeuse"), (BLOCK, 234, 12, "Bellatrix"),
-        (TUB, 211, 31, "Alnitak"), (TUB, 218, 28, "Alnilam"), (TUB, 225, 25, "Mintaka"),
-        (BLOCK, 206, 69, "Saiph"), (BLINKER, 230, 61, "Rigel"),
+        (MOLD, 199, 6, "Betelgeuse", 4), (BLOCK, 234, 12, "Bellatrix", 1),
+        (TUB, 211, 31, "Alnitak", 1), (TUB, 218, 28, "Alnilam", 1), (TUB, 225, 25, "Mintaka", 1),
+        (BLOCK, 206, 69, "Saiph", 1), (BLINKER, 228, 57, "Rigel", 2),
     ]
-    for pat, x, y, star in orion:
-        scene.add(star, "sky", pat.name, pat.at(x, y), 2 if pat is BLINKER else 1,
-                  f"{star} (Orion)")
+    for pat, x, y, star, per in orion:
+        scene.add(star, "sky", pat.name, pat.at(x, y), per, f"{star} (Orion)")
     scene.add("M42", "sky", "pulsar", PULSAR.at(210, 41), 3, "Orion Nebula (M42)")
+    scene.add("galaxy", "sky", "Kok's galaxy", KOKS_GALAXY.at(GALAXY_AT[0], GALAXY_AT[1]), 8,
+              "a spiral galaxy: winds and unwinds every 8 generations")
 
     # Telescope on a tripod, aimed up-left at M42.
     # The tube lies on the diagonal through M42's centre, so it really points at it.
@@ -301,14 +313,41 @@ def build_space_region(scene: Scene) -> None:
         leg.flip_x().at(241, 85), leg.at(255, 85)), 1, "tripod legs")
 
     stars = [
-        (TUB, 59, 12), (BLOCK, 100, 12), (BLINKER, 70, 26), (TUB, 52, 56),
-        (BLOCK, 60, 62), (TUB, 116, 6), (BLINKER, 181, 3), (TUB, 268, 10),
-        (BLINKER, 262, 30), (TUB, 273, 48), (BLOCK, 193, 88), (TUB, 222, 84), (TUB, 262, 64),
+        (TUB, 59, 12, 1), (BLOCK, 100, 12, 1), (OCTAGON_2, 64, 22, 5), (TUB, 52, 56, 1),
+        (BLOCK, 60, 62, 1), (TUB, 116, 6, 1), (BLINKER, 181, 3, 2), (TUB, 273, 48, 1),
+        (MOLD, 271, 34, 4), (BLOCK, 193, 88, 1), (TUB, 222, 84, 1), (TUB, 262, 64, 1),
+        (BLINKER, 272, 74, 2),
     ]
-    for pat, x, y in stars:
-        per = 2 if pat is BLINKER else 1
-        scene.add(f"star at {x},{y}", "sky", pat.name, pat.at(x, y), per,
-                  "a twinkling star" if per == 2 else "a star")
+    for pat, x, y, per in stars:
+        kind = {1: "a star", 2: "a twinkling star", 4: "a pulsing star", 5: "a pulsing star"}
+        scene.add(f"star at {x},{y}", "sky", pat.name, pat.at(x, y), per, kind[per])
+
+
+# Meteor shower: south-west gliders entering past the right edge. Each lane lists the
+# generations within a loop at which a meteor crosses the entry point; copies one LOOP
+# apart (LOOP/4 diagonals up-lane) keep the visible window exactly periodic.
+METEOR_LANES = [
+    # (entry point just outside the window, crossing times within each loop)
+    ((282, 9), (40, 110, 190, 250, 330, 430, 480, 540)),
+]
+METEOR_COPIES = range(-1, 3)
+
+
+def meteor_lanes() -> tuple[int, int]:
+    """x + y range of every meteor glider."""
+    lanes = [antidiag(c) for (x, y), _ in METEOR_LANES for c in METEOR.at(x, y)]
+    return min(lanes), max(lanes)
+
+
+def build_meteor_shower(scene: Scene) -> None:
+    for (x, y), times in METEOR_LANES:
+        entry = METEOR.at(x, y)
+        for k in METEOR_COPIES:
+            for t in times:
+                when = START + k * LOOP + t
+                scene.add(f"meteor {k}.{t}", "meteors", "glider",
+                          rewind_glider(entry, when, step=(-1, 1)), 0,
+                          "a meteor: a glider falling through the sky")
 
 
 # --- OneCreations -----------------------------------------------------------------------
@@ -369,26 +408,30 @@ def print_job_gliders() -> list[tuple[int, State]]:
 def build_print_job(scene: Scene) -> None:
     """Place every salvo glider far up its lane, so it reaches its launch point on time.
 
-    Copy k of the salvo is released k·LOOP generations later than copy 0; since a
-    glider moves one diagonal per 4 generations, copies sit LOOP/4 diagonals apart.
+    Copy k of the salvo is released k·PRINT_PERIOD generations later than copy 0; a
+    glider moves one diagonal per 4 generations, so copies sit PRINT_PERIOD/4
+    diagonals apart along their lanes.
     """
     for k in PRINT_COPIES:
         for i, (release, g) in enumerate(print_job_gliders()):
-            when = START + k * LOOP + release
+            when = START + k * PRINT_PERIOD + release
             scene.add(f"print job {k}.{i}", "print job", "glider", rewind_glider(g, when), 0,
                       f"turns the part into {PRINT_RECIPE[i][2]}")
 
 
-def rewind_glider(cells: State, generations: int) -> State:
-    """The south-east glider that becomes ``cells`` after ``generations`` steps.
+def rewind_glider(cells: State, generations: int, step: Cell = (1, 1)) -> State:
+    """The glider that becomes ``cells`` after ``generations`` steps.
 
-    A glider repeats its shape every 4 generations, one cell further (+1, +1), so
-    going back 4q + r generations is: step back one period, run it forward 4 - r
-    generations (if r > 0), then slide it back q diagonals.
+    A glider repeats its shape every 4 generations, one cell further along
+    ``step`` ((1, 1) south-east, (-1, 1) south-west), so going back 4q + r
+    generations is: step back one period, run it forward 4 - r generations
+    (if r > 0), then slide it back q diagonals.
     """
+    dx, dy = step
     q, r = divmod(generations, 4)
-    earlier = advance(frozenset((x - 1, y - 1) for x, y in cells), 4 - r) if r else frozenset(cells)
-    out = frozenset((x - q, y - q) for x, y in earlier)
+    earlier = (advance(frozenset((x - dx, y - dy) for x, y in cells), 4 - r) if r
+               else frozenset(cells))
+    out = frozenset((x - q * dx, y - q * dy) for x, y in earlier)
     assert advance(out, generations) == frozenset(cells)
     return out
 
@@ -401,6 +444,7 @@ def build_scene() -> Scene:
     build_space_region(scene)
     build_onecreations_signature(scene)
     build_print_job(scene)
+    build_meteor_shower(scene)
     return scene
 
 
@@ -410,7 +454,7 @@ def pattern_map(scene: Scene | None = None) -> str:
     rows = ["| region | part | pattern | period | where (x, y) | meaning |",
             "|---|---|---|---|---|---|"]
     for p in scene.parts:
-        if p.region == "print job":
+        if p.region in ("print job", "meteors"):
             continue
         x0 = min(x for x, _ in p.cells)
         y0 = min(y for _, y in p.cells)
@@ -420,6 +464,9 @@ def pattern_map(scene: Scene | None = None) -> str:
     rows.append(f"| print job | {len(jobs)} gliders ({len(jobs) // len(PRINT_RECIPE)} copies of "
                 f"the {len(PRINT_RECIPE)}-glider salvo) | glider | moves | far up-left, off-screen "
                 f"| slow-salvo construction |")
+    meteors = [p for p in scene.parts if p.region == "meteors"]
+    rows.append(f"| meteors | {len(meteors)} gliders on {len(METEOR_LANES)} lane(s) | glider | "
+                f"moves | far up-right, off-screen | a meteor shower |")
     return "\n".join(rows)
 
 
