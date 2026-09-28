@@ -207,38 +207,92 @@ def test_scene_fits_the_window(scene):
     assert x0 >= 0 and y0 >= 0 and x1 < comp.COLS and y1 < comp.ROWS
 
 
+# --- colour is metadata --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("theme_name", ["dark", "light"])
+def test_theme_never_uses_a_colour_for_both_live_and_dead(theme_name):
+    from life.renderer import THEMES
+    theme = next(t for t in THEMES if t.name == theme_name)
+    assert not theme.live_colours() & theme.dead_colours()
+    assert len(theme.colours()) < 255                  # index 255 is GIF transparency
+
+
+def test_themes_have_the_same_palette_layout():
+    from life.renderer import DARK, LIGHT
+    assert len(DARK.colours()) == len(LIGHT.colours())
+
+
+def test_every_visible_cell_has_a_region():
+    from life.renderer import ZONES
+    zone_of = comp.zone_function()
+    seen = {zone_of((x, y)) for x in range(comp.COLS) for y in range(comp.ROWS)}
+    assert seen <= set(ZONES) and {"systems", "making", "sky", "flight"} <= seen
+
+
+def test_orbit_lane_is_empty_apart_from_travellers(scene):
+    for part in scene.parts:
+        if part.period:
+            assert all(y > comp.ORBIT_ROWS for _, y in part.cells), part.name
+
+
+def test_rack_printer_and_tripod_share_a_baseline(scene):
+    bottoms = {p.name: max(y for _, y in p.cells) for p in scene.parts
+               if p.name in ("rack", "enclosure", "tripod")}
+    assert set(bottoms.values()) == {comp.BASELINE}, bottoms
+
+
+def test_satellite_survives_every_pass():
+    from life.verify import check_satellite
+    check_satellite()
+
+
 # --- the published banner -------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")
 def banner():
-    from life.generate import simulate, view
-    return view(), simulate()
+    from life.generate import simulate, view, zone_map
+    v = view()
+    return v, zone_map(v), simulate()
 
 
 def test_simulated_generations_follow_conway(banner):
     from life.verify import check_rules
-    check_rules(banner[1])
+    check_rules(banner[2])
 
 
-def test_gif_is_an_exact_picture_of_conway(banner):
+def test_trails_are_only_recently_dead_cells(banner):
+    frames = banner[2]
+    for prev2, prev1, f in zip(frames, frames[1:], frames[2:]):
+        for c, k in f.trails.items():
+            assert c not in f.state
+            assert c in (prev1.state if k == 1 else prev2.state)
+
+
+@pytest.mark.parametrize("theme_name", ["dark", "light"])
+def test_gif_is_an_exact_picture_of_conway(banner, theme_name):
     from PIL import Image
 
-    from life.verify import GIF, check_gif
-    v, frames = banner
-    if not GIF.exists():
+    from life.generate import GIF_NAMES
+    from life.renderer import THEMES
+    from life.verify import ASSETS, check_gif
+    v, _, frames = banner
+    theme = next(t for t in THEMES if t.name == theme_name)
+    gif = ASSETS / GIF_NAMES[theme_name]
+    if not gif.exists():
         pytest.skip("run `python -m life.generate` first")
-    with Image.open(GIF) as im:
-        assert im.size == (1400, 500)
+    with Image.open(gif) as im:
+        assert im.size == v.size == (1400, 540)
         assert im.n_frames == comp.LOOP
         assert im.info.get("loop") == 0
-    assert GIF.stat().st_size < 5_000_000
-    check_gif(GIF, v, frames)
+    assert gif.stat().st_size < 5_000_000
+    check_gif(gif, v, frames, theme)
 
 
 def test_loop_is_seamless_in_pixels(banner):
     from life.generate import render_frame
-    from life.renderer import base_image
+    from life.renderer import THEMES
     from life.verify import check_loop
-    v, frames = banner
-    check_loop(v, frames, render_frame, base_image(v))
+    v, zones, frames = banner
+    check_loop(v, zones, frames, render_frame, THEMES)

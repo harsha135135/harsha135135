@@ -2,7 +2,10 @@
 
 <p align="center"><img src="../assets/life-banner-preview.png" width="100%" alt="Generation 710: the printer has just printed a honey farm"></p>
 
-Every frame of [`assets/life-banner.gif`](../assets/life-banner.gif) is one generation of
+*Simple rules → complex systems → unexpected creations.*
+
+Every frame of [`assets/life-banner.gif`](../assets/life-banner.gif) (and its light-mode
+twin [`life-banner-light.gif`](../assets/life-banner-light.gif)) is one generation of
 Conway's Game of Life (B3/S23), computed from the frame before it. Nothing is drawn by
 hand after generation 0: the rack, the glider stream, the printer, the part on the bed,
 the drone and the sky are all live cells that happen to be arranged so the machines keep
@@ -40,8 +43,9 @@ The engine does not care where it runs. It could drive an interactive version on
 | **Printer**, centre | an enclosure, gantry and bed made of **blocks**; the hot end is a **pentadecathlon** (p15); the data port is an **eater 1** that swallows each glider and repairs itself | software becoming physical |
 | **The print job** | five **gliders** arriving from beyond the top edge, "from the cloud", and one **seed block** on the bed | a job being manufactured |
 | **Flight**, top centre | an X-frame quadcopter: a **pond** body, four **long barge** arms and four **blinker** propellers (a blinker turns a quarter turn every generation) | FPV and electronics |
-| **Sky**, right | Orion: **tubs**, **blocks** and a twinkling **blinker**; Betelgeuse, a pulsating variable star, is a **mold** (p4). Under the belt, M42 is a **pulsar** (p3). A **long barge** telescope on a tripod points at it. Top right, **Kok's galaxy** (p8) winds and unwinds like a spiral galaxy, and an **octagon 2** (p5) pulses over the rack | astrophotography |
+| **Sky**, right | Orion: **tubs**, **blocks** and a twinkling **blinker**; Betelgeuse, a pulsating variable star, is a **mold** (p4). Under the belt, M42 is a **pulsar** (p3). A **long barge** telescope on a tripod points at it. Top right, **Kok's galaxy** (p8) winds and unwinds like a spiral galaxy, and an **octagon 2** (p5) pulses between the rack and the printer | astrophotography |
 | **Meteor shower** | **gliders** heading south-west, eight per loop, falling through the sky from beyond the right edge and out through the bottom | motion in the night sky |
+| **Satellite** | a **lightweight spaceship** crossing the empty orbit lane along the top, left to right, once per loop | a satellite pass over the telescope |
 | **OneCreations** | an **O** and a **C** made of blocks, the maker's mark on the printer's base | the workshop all of this comes out of |
 
 `python -m life.composition` prints the full pattern map: every part, its pattern, its
@@ -92,6 +96,15 @@ structures that are stable, periodic, or controlled:
 - **The gun and eater.** The eater's position was found by search: every offset along
   the lane where gun + eater is exactly period 30 with nothing escaping.
 - **Periods.** Every machine's period (1, 2, 3, 4, 5, 8, 15, 30) divides 600.
+- **Layout.** Three columns: the rack (x 1–44), the printer (x 92–186) and the sky
+  (x 190–279). The rack's bottom rail, the printer's base and the tripod's feet all end
+  on the same row. The top eight rows are kept empty as the satellite's orbit lane, and
+  the stars are placed on purpose: a loose diagonal between the rack and the printer,
+  parallel to the stream, plus the sky around Orion.
+- **The satellite's timing.** It crosses the print-job lanes on screen and the meteor
+  lane just past the right edge. [`tools/satellite_time.py`](../tools/satellite_time.py)
+  tries every entry time in the loop and keeps the one with the widest clearance. The
+  verifier then checks that every pass leaves the window intact.
 
 ## 5. Looping
 
@@ -103,7 +116,8 @@ The loop combines both options from the brief. There is no restart and no fade.
   Copies of the salvo sit 75 diagonals apart up their lanes (300 generations of glider
   travel), so each job's gliders are exactly where the previous job's were.
 - Meteors work the same way: each meteor has a copy 150 diagonals further up its lane,
-  which reaches the screen exactly one loop later.
+  which reaches the screen exactly one loop later. The satellite has copies 300 cells
+  apart, far to the left (it moves 2 cells every 4 generations).
 
 So the **window at generation 1200 is identical to the window at generation 600**, cell
 for cell. It even renders pixel-identically: print jobs run from generation 0 on, so the
@@ -113,28 +127,41 @@ periodic, since gliders keep leaving to infinity, but everything visible is.
 
 ## 6. Rendering
 
-- 280 × 96 cells, drawn 4 px on a 5 px pitch: **1400 × 480** of grid plus a 20 px
-  caption strip, **1400 × 500** in total. Dead cells are faint squares, so the grid is
+- 280 × 104 cells, drawn 4 px on a 5 px pitch: **1400 × 520** of grid plus a 20 px
+  caption strip, **1400 × 540** in total. Dead cells are faint squares, so the grid is
   always visible.
-- Colour is metadata only. Each live cell is drawn in one of five colours according to
-  how long it has been alive:
+- **Colour is metadata only.** Hue comes from the region a cell is in, and brightness
+  from how long it has been alive:
 
-  | age | colour | what shows up in it |
-  |---|---|---|
-  | 1 | violet | births: gliders' leading edges, blinker tips |
-  | 2–3 | white | fast activity: the gun's shuttles, the pulsar |
-  | 4–29 | light grey | slower oscillators, repaired eater cells |
-  | 30–199 | violet-grey | things made recently, like the printed honey farm and the seed |
-  | 200+ | steel | infrastructure that has always been there |
+  | region | hue | | age | shade |
+  |---|---|---|---|---|
+  | rack and gun | teal | | 1 | vivid (a birth) |
+  | glider stream | cyan | | 2–3 | near-white |
+  | printer | amber | | 4–29 | mid |
+  | print-job gliders | orange | | 30–199 | bright: things made recently, like the honey farm |
+  | drone | lime | | 200+ | dim: structure that has always been there |
+  | sky, Orion, galaxy | indigo-violet | | | |
+  | meteors | gold | | | |
+  | satellite | silver | | | |
 
-  A cell is drawn if and only if it is alive, as one flat square. Ages are computed from
-  states and never fed back.
-- The caption is a 3×5 pixel font defined in [`life/pixelfont.py`](../life/pixelfont.py).
-  No system fonts are used, so output is identical on every machine.
-- GIF encoding: frame 0 is complete. Every later frame keeps only the pixels that
+  So the printed honey farm glows bright amber on the printer's dim amber frame.
+  Regions are pure geometry (`composition.zone_function()`), and ages are computed from
+  states. Neither ever feeds back into the simulation.
+- **Trails.** A cell that died one or two generations ago is drawn as a dim square of
+  its region's hue, but only in regions where things travel (stream, print jobs, meteors,
+  satellite). So gliders get short comet tails and oscillators do not smear. Trails are
+  dead cells, and the verifier reads them as dead.
+- **Light mode.** `life-banner-light.gif` is the same 600 states rendered with a light
+  palette. The README's `<picture>` element lets GitHub pick it for visitors using the
+  light theme.
+- **Caption.** Region labels in their own colours (SYSTEMS, MAKING · FLIGHT, SKY) and the
+  true generation number, in a 3×5 pixel font defined in
+  [`life/pixelfont.py`](../life/pixelfont.py). No system fonts are used, so output is
+  identical on every machine.
+- **GIF encoding.** Frame 0 is complete. Every later frame keeps only the pixels that
   changed, with the rest transparent (disposal 1), so viewers composite the exact
   picture. 600 frames at 30 ms (about 33 generations a second) is an 18-second loop of
-  about **2.9 MB**.
+  about **3.4 MB** per theme. A visitor downloads only one of them.
 
 ## 7. How correctness is verified
 
@@ -143,16 +170,19 @@ periodic, since gliders keep leaving to infinity, but everything visible is.
 1. **Rules.** A second B3/S23 implementation visits every candidate cell, counts its eight
    neighbours one by one and applies the four rules literally. It agrees with the engine
    on every displayed generation: frame N+1 = Conway(frame N).
-2. **The GIF itself.** Each frame is decoded from pixels back into cells. Every cell square
-   must be one flat colour, either a live colour or the dead colour, and every grid-gap
-   pixel must be background. Then a third implementation (numpy array shifts) checks that
-   decoded frame N+1 = Conway(decoded frame N) for every cell whose neighbourhood is
-   inside the picture, **including last frame → first frame**. That is 15.7 million cell
-   updates.
-3. **Loop.** The window at 1200 equals the window at 600 and renders pixel-identically.
+2. **The GIFs themselves.** Every frame of both GIFs is decoded from pixels back into
+   cells. Every cell square must be one flat colour, either a live colour or a dead one
+   (the dead colour or a trail colour), and every grid-gap pixel must be background. No
+   colour may appear in both sets. Then a third implementation (numpy array shifts)
+   checks that decoded frame N+1 = Conway(decoded frame N) for every cell whose
+   neighbourhood is inside the picture, **including last frame → first frame**. That is
+   17 million cell updates per GIF.
+3. **Loop.** The window at 1200 equals the window at 600, and renders pixel-identically
+   in both themes, colours and trails included.
 4. **Print jobs.** Both jobs' gliders, flown in with nothing else around, make a honey
    farm and return to the identical block, twice.
-5. **Manifest.** Decoded frames match the per-generation hashes in
+5. **Satellite.** Every pass leaves the window as an intact LWSS.
+6. **Manifest.** Decoded frames match the per-generation hashes in
    [`assets/life-banner.json`](../assets/life-banner.json).
 
 `pytest` covers the four rules, the known patterns (block, beehive, loaf, boat, tub, pond
@@ -164,7 +194,7 @@ reference on random soups, and every property of the composition above.
 
 Also cross-checked against a completely different engine, the Rust HashLife from my
 life-lab project (private for now): run `python -m tools.crosscheck_hashlife --life-lab
-<checkout>`. At generation 1200 both engines give the same 1,824 cells.
+<checkout>`. At generation 1200 both engines give the same 1,854 cells.
 
 ## 8. Regenerating
 
@@ -172,16 +202,17 @@ life-lab project (private for now): run `python -m tools.crosscheck_hashlife --l
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 
-python -m life.generate          # writes assets/life-banner.{gif,json} and -preview.png
-python -m life.verify            # proves the published GIF is Conway's Life
+python -m life.generate          # writes both GIFs, the preview PNG and the manifest
+python -m life.verify            # proves the published GIFs are Conway's Life
 pytest                           # unit tests for the engine, patterns and composition
 python -m life.composition       # prints the pattern map
 python -m tools.salvo_search     # re-derives the print-job recipe (≈3 min)
+python -m tools.satellite_time   # re-derives the satellite's entry time
 ```
 
 Output is deterministic: the same composition and settings give the same states and the
 same manifest. CI ([`.github/workflows/banner.yml`](../.github/workflows/banner.yml))
-runs the tests, verifies the committed GIF and checks that regenerating reproduces the
+runs the tests, verifies both committed GIFs and checks that regenerating reproduces the
 committed manifest. It never regenerates the banner on its own.
 
 ## 9. Easter eggs

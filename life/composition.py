@@ -10,7 +10,8 @@ moves it forward. Regions are placed so that each machine keeps working:
                  take it apart again, back into the exact seed block
     FLIGHT   X-frame quadcopter with four blinker propellers
     SKY      Orion with M42 as a pulsar, a telescope aimed at it, Kok's galaxy turning,
-             twinkling stars and a meteor shower of gliders
+             twinkling stars, a meteor shower of gliders, and a satellite (LWSS)
+             crossing the empty orbit lane along the top
 
 Coordinates are world cells: x to the right, y downwards. The banner shows
 the rectangle ``[0, COLS) × [0, ROWS)``.
@@ -28,11 +29,13 @@ from dataclasses import dataclass, field
 
 from .engine import Cell, State, advance, next_generation
 from .patterns import (
-    BLINKER, BLOCK, EATER, GLIDER, GOSPER_GLIDER_GUN, KOKS_GALAXY, MOLD, OCTAGON_2,
+    BLINKER, BLOCK, EATER, GLIDER, GOSPER_GLIDER_GUN, KOKS_GALAXY, LWSS, MOLD, OCTAGON_2,
     PENTADECATHLON, POND, PULSAR, TUB, Pattern, glider_heading, union,
 )
 
-COLS, ROWS = 280, 96            # visible window, in cells
+COLS, ROWS = 280, 104           # visible window, in cells
+ORBIT_ROWS = 8                  # rows 0-7: an empty lane for the satellite
+TOP, BASELINE = 9, 100          # the rack and sky start on TOP; rack, printer, tripod end on BASELINE
 LOOP = 600                      # generations per GIF loop; multiple of 2, 3, 4, 5, 8, 15, 30
 START = 600                     # first displayed generation (stream full, colours settled)
 # The printer runs a job every PRINT_PERIOD generations: twice per loop. Copies of the
@@ -43,13 +46,15 @@ PRINT_COPIES = range(-START // PRINT_PERIOD, 2 * LOOP // PRINT_PERIOD + 1)
 
 # --- anchors ---------------------------------------------------------------------------
 
-RACK = dict(x=1, y=1, nx=15, ny=31)           # block lattice: x 1…44, y 1…92
-GUN_AT = (5, 5)
-PRINTER = dict(x=92, y=24, nx=32, ny=23)      # block lattice: x 92…186, y 24…91
-SEED_AT = (140, 67)                           # the build plate's origin block
-DRONE_AT = (152, 10)                          # centre of the quadcopter
-GALAXY_AT = (250, 3)                          # Kok's galaxy, top-right sky
+RACK = dict(x=1, y=TOP, nx=15, ny=31)         # block lattice: x 1…44, y 9…100
+GUN_AT = (5, TOP + 4)
+PRINTER = dict(x=92, y=33, nx=32, ny=23)      # block lattice: x 92…186, y 33…100
+SEED_AT = (140, 76)                           # the build plate's origin block
+DRONE_AT = (152, 19)                          # centre of the quadcopter, above the printer
+SKY = (0, TOP)                                # offset applied to every sky coordinate below
+GALAXY_AT = (250, 3)                          # Kok's galaxy, top-right sky (sky coordinates)
 METEOR = glider_heading("sw")
+SATELLITE = LWSS.flip_x()                     # lightweight spaceship heading right
 
 # --- parts and the scene ---------------------------------------------------------------
 
@@ -284,8 +289,13 @@ def build_drone(scene: Scene) -> None:
 # --- SKY -------------------------------------------------------------------------------
 
 
+def sky(pattern: Pattern, x: int, y: int) -> State:
+    """Place a pattern in sky coordinates (shifted by SKY so the sky clears the orbit)."""
+    return pattern.at(x + SKY[0], y + SKY[1])
+
+
 def build_space_region(scene: Scene) -> None:
-    """Orion, the telescope aimed at M42, Kok's galaxy, and stars elsewhere in the sky.
+    """Orion, the telescope aimed at M42, Kok's galaxy, and a few deliberate stars.
 
     Orion's Nebula (M42, under the belt) is the classic first astrophotography
     target; here it is a pulsar, the brightest period-3 oscillator. Betelgeuse, a
@@ -298,29 +308,31 @@ def build_space_region(scene: Scene) -> None:
         (BLOCK, 206, 69, "Saiph", 1), (BLINKER, 228, 57, "Rigel", 2),
     ]
     for pat, x, y, star, per in orion:
-        scene.add(star, "sky", pat.name, pat.at(x, y), per, f"{star} (Orion)")
-    scene.add("M42", "sky", "pulsar", PULSAR.at(210, 41), 3, "Orion Nebula (M42)")
-    scene.add("galaxy", "sky", "Kok's galaxy", KOKS_GALAXY.at(GALAXY_AT[0], GALAXY_AT[1]), 8,
+        scene.add(star, "sky", pat.name, sky(pat, x, y), per, f"{star} (Orion)")
+    scene.add("M42", "sky", "pulsar", sky(PULSAR, 210, 41), 3, "Orion Nebula (M42)")
+    scene.add("galaxy", "sky", "Kok's galaxy", sky(KOKS_GALAXY, *GALAXY_AT), 8,
               "a spiral galaxy: winds and unwinds every 8 generations")
 
-    # Telescope on a tripod, aimed up-left at M42.
+    # Telescope on a tripod, aimed up-left at M42; its feet stand on the baseline.
     # The tube lies on the diagonal through M42's centre, so it really points at it.
     tube = long_barge(11)                                 # NW–SE rod
-    scene.add("telescope", "sky", "long barge", tube.at(236, 67), 1, "the telescope tube")
-    scene.add("mount", "sky", "block", BLOCK.at(251, 81), 1, "the mount")
-    leg = long_barge(7)
+    scene.add("telescope", "sky", "long barge", sky(tube, 236, 67), 1, "the telescope tube")
+    scene.add("mount", "sky", "block", sky(BLOCK, 251, 81), 1, "the mount")
+    leg = long_barge(5)
     scene.add("tripod", "sky", "long barge", union(
-        leg.flip_x().at(241, 85), leg.at(255, 85)), 1, "tripod legs")
+        sky(leg.flip_x(), 243, 85), sky(leg, 255, 85)), 1, "tripod legs")
 
+    # A few stars, placed on purpose: a loose diagonal between the rack and the
+    # printer (parallel to the glider stream) and a scatter around Orion.
     stars = [
-        (TUB, 59, 12, 1), (BLOCK, 100, 12, 1), (OCTAGON_2, 64, 22, 5), (TUB, 52, 56, 1),
-        (BLOCK, 60, 62, 1), (TUB, 116, 6, 1), (BLINKER, 181, 3, 2), (TUB, 273, 48, 1),
-        (MOLD, 271, 34, 4), (BLOCK, 193, 88, 1), (TUB, 222, 84, 1), (TUB, 262, 64, 1),
-        (BLINKER, 272, 74, 2),
+        (TUB, 54, 4, 1), (OCTAGON_2, 64, 20, 5), (TUB, 58, 46, 1), (BLOCK, 66, 58, 1),
+        (TUB, 74, 70, 1), (BLINKER, 105, 3, 2), (TUB, 178, 4, 1),
+        (TUB, 273, 48, 1), (MOLD, 271, 34, 4), (TUB, 222, 84, 1), (TUB, 262, 64, 1),
+        (BLINKER, 272, 74, 2), (BLOCK, 193, 88, 1),
     ]
     for pat, x, y, per in stars:
         kind = {1: "a star", 2: "a twinkling star", 4: "a pulsing star", 5: "a pulsing star"}
-        scene.add(f"star at {x},{y}", "sky", pat.name, pat.at(x, y), per, kind[per])
+        scene.add(f"star at {x},{y}", "sky", pat.name, sky(pat, x, y), per, kind[per])
 
 
 # Meteor shower: south-west gliders entering past the right edge. Each lane lists the
@@ -328,7 +340,7 @@ def build_space_region(scene: Scene) -> None:
 # apart (LOOP/4 diagonals up-lane) keep the visible window exactly periodic.
 METEOR_LANES = [
     # (entry point just outside the window, crossing times within each loop)
-    ((282, 9), (40, 110, 190, 250, 330, 430, 480, 540)),
+    ((282, 9 + TOP), (40, 110, 190, 250, 330, 430, 480, 540)),
 ]
 METEOR_COPIES = range(-1, 3)
 
@@ -420,12 +432,12 @@ def build_print_job(scene: Scene) -> None:
 
 
 def rewind_glider(cells: State, generations: int, step: Cell = (1, 1)) -> State:
-    """The glider that becomes ``cells`` after ``generations`` steps.
+    """The spaceship that becomes ``cells`` after ``generations`` steps.
 
-    A glider repeats its shape every 4 generations, one cell further along
-    ``step`` ((1, 1) south-east, (-1, 1) south-west), so going back 4q + r
-    generations is: step back one period, run it forward 4 - r generations
-    (if r > 0), then slide it back q diagonals.
+    Gliders and lightweight spaceships repeat their shape every 4 generations,
+    displaced by ``step`` ((1, 1) south-east glider, (-1, 1) south-west glider,
+    (2, 0) right-moving LWSS). Going back 4q + r generations is: step back one
+    period, run it forward 4 - r generations (if r > 0), then slide back q steps.
     """
     dx, dy = step
     q, r = divmod(generations, 4)
@@ -434,6 +446,82 @@ def rewind_glider(cells: State, generations: int, step: Cell = (1, 1)) -> State:
     out = frozenset((x - q * dx, y - q * dy) for x, y in earlier)
     assert advance(out, generations) == frozenset(cells)
     return out
+
+
+# Satellite: a lightweight spaceship crossing the orbit lane left to right once per loop.
+# It moves 2 cells every 4 generations (c/2), so a loop carries it 300 cells: copies sit
+# 300 cells apart, far to the left. SATELLITE_TIME is when, within each loop, it enters
+# the window; it was chosen by tools/satellite_time.py so that no print-job glider (which
+# cross the orbit lane on-screen) and no meteor (which cross it just past the right edge)
+# is ever within reach.
+SATELLITE_ROW = 2
+SATELLITE_TIME = 304
+SATELLITE_COPIES = range(-1, 3)
+
+
+def satellite_entry() -> State:
+    """The LWSS just left of the window, where it is at SATELLITE_TIME."""
+    return SATELLITE.at(-SATELLITE.width - 3, SATELLITE_ROW)
+
+
+def build_satellite(scene: Scene, time: int | None = None) -> None:
+    t = SATELLITE_TIME if time is None else time
+    for k in SATELLITE_COPIES:
+        when = START + k * LOOP + t
+        scene.add(f"satellite {k}", "satellite", "lightweight spaceship",
+                  rewind_glider(satellite_entry(), when, step=(2, 0)), 0,
+                  "a satellite pass: an LWSS crossing the orbit lane")
+
+
+def zone_function():
+    """cell -> region name, used only to colour the picture (see life/renderer.py).
+
+    Pure geometry, checked in this order: the meteor lane, the print-job lanes
+    above the seed, the gun's stream between gun and eater, the orbit lane, then
+    the rack, the drone and the printer; everything else is sky.
+    """
+    m_lo, m_hi = meteor_lanes()
+    j_lo, j_hi = salvo_lanes()
+    s_lo, s_hi = stream_lanes()
+    stream_top, stream_bottom = stream_rows()
+    sx, sy = SEED_AT
+    dx, dy = DRONE_AT
+    rack_right = RACK["x"] + 3 * RACK["nx"] + 1
+    px0, py0 = PRINTER["x"], PRINTER["y"]
+    px1 = px0 + 3 * PRINTER["nx"]
+
+    def zone_of(c: Cell) -> str:
+        x, y = c
+        if m_lo - 3 <= x + y <= m_hi + 3:
+            return "meteor"
+        if j_lo - 3 <= x - y <= j_hi + 3 and y < sy - 10:
+            return "job"
+        if s_lo - 3 <= x - y <= s_hi + 3 and stream_top <= y < stream_bottom:
+            return "stream"
+        if y < ORBIT_ROWS:
+            return "orbit"
+        if x <= rack_right:
+            return "systems"
+        if abs(x - dx) <= 14 and y < py0 - 1:
+            return "flight"
+        if px0 - 4 <= x <= px1 + 2 and y >= py0 - 1:
+            return "making"
+        return "sky"
+
+    return zone_of
+
+
+def labels(pitch: int):
+    """Caption-strip labels, each centred under (or aligned with) its region."""
+    from .renderer import Label
+    printer_mid = (PRINTER["x"] + 3 * PRINTER["nx"] // 2) * pitch
+    sky_left = (PRINTER["x"] + 3 * PRINTER["nx"] + 6) * pitch
+    return (
+        Label((("SYSTEMS", "systems"),), x=10),
+        Label((("MAKING", "making"), (" · ", None), ("FLIGHT", "flight")), x=printer_mid,
+              align="centre"),
+        Label((("SKY", "sky"),), x=sky_left),
+    )
 
 
 def build_scene() -> Scene:
@@ -445,6 +533,7 @@ def build_scene() -> Scene:
     build_onecreations_signature(scene)
     build_print_job(scene)
     build_meteor_shower(scene)
+    build_satellite(scene)
     return scene
 
 
@@ -454,7 +543,7 @@ def pattern_map(scene: Scene | None = None) -> str:
     rows = ["| region | part | pattern | period | where (x, y) | meaning |",
             "|---|---|---|---|---|---|"]
     for p in scene.parts:
-        if p.region in ("print job", "meteors"):
+        if p.region in ("print job", "meteors", "satellite"):
             continue
         x0 = min(x for x, _ in p.cells)
         y0 = min(y for _, y in p.cells)
@@ -467,6 +556,9 @@ def pattern_map(scene: Scene | None = None) -> str:
     meteors = [p for p in scene.parts if p.region == "meteors"]
     rows.append(f"| meteors | {len(meteors)} gliders on {len(METEOR_LANES)} lane(s) | glider | "
                 f"moves | far up-right, off-screen | a meteor shower |")
+    satellites = [p for p in scene.parts if p.region == "satellite"]
+    rows.append(f"| satellite | {len(satellites)} copies | lightweight spaceship | moves | "
+                f"orbit lane, far left | a satellite pass |")
     return "\n".join(rows)
 
 

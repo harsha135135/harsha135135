@@ -5,19 +5,20 @@ Checks, each against something independent of the code that produced it:
 1. rules      — a second, deliberately naive B3/S23 implementation (explicit
                 neighbour loops over a dense grid) agrees with ``life.engine``
                 on every displayed generation: frame N+1 = Conway(frame N).
-2. gif        — the published GIF is decoded back into cells from its pixels.
-                Every cell square must be one flat colour (live colour or the
-                dead colour) and every gap pixel background, so the image is
-                an exact binary picture of the state. Decoded frame N+1 must
-                equal Conway(decoded frame N) on every cell whose neighbourhood
-                is inside the picture — including last frame → first frame.
-3. loop       — the window at START + LOOP equals the window at START, and its
-                rendering is pixel-identical, so the GIF's wrap-around is a
-                genuine Conway step.
-4. print job  — the five-glider salvo, flown in from far away with nothing
-                else around, turns the seed block into a honey farm and then
-                back into the identical block.
-5. manifest   — decoded frames match the per-generation hashes in
+2. gif        — both published GIFs (dark and light) are decoded back into
+                cells from their pixels. Every cell square must be one flat
+                colour — a live colour, or the dead colour / a trail colour —
+                and every gap pixel background, so each image is an exact
+                binary picture of the state. Decoded frame N+1 must equal
+                Conway(decoded frame N) on every cell whose neighbourhood is
+                inside the picture — including last frame → first frame.
+3. loop       — the window at START + LOOP equals the window at START, and it
+                renders pixel-identically in both themes (colours and trails
+                included), so the GIF's wrap-around is a genuine Conway step.
+4. print job  — the salvo, flown in from far away with nothing else around,
+                turns the seed block into a honey farm and back, twice a loop.
+5. satellite  — every copy of the satellite leaves the window intact.
+6. manifest   — decoded frames match the per-generation hashes in
                 assets/life-banner.json.
 """
 
@@ -35,7 +36,7 @@ from .engine import advance, window
 from .patterns import BEEHIVE, BLOCK
 
 ROOT = Path(__file__).resolve().parent.parent
-GIF = ROOT / "assets" / "life-banner.gif"
+ASSETS = ROOT / "assets"
 MANIFEST = ROOT / "assets" / "life-banner.json"
 
 
@@ -84,22 +85,19 @@ def grid_step(alive: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 # --- 2. reading the GIF back ----------------------------------------------------------
 
 
-def _rgb(h: str) -> tuple[int, int, int]:
-    h = h.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-
-def decode_frames(path: Path, view) -> list[np.ndarray]:
+def decode_frames(path: Path, view, theme) -> list[np.ndarray]:
     """Alive/dead grid of every frame, recovered from pixels.
 
-    Raises unless each cell square is one flat colour — a live colour or the dead
-    colour — and every grid-gap pixel is background: the picture must be an
-    exact binary image of the state, nothing blended or blurred.
+    Raises unless each cell square is one flat colour — one of the theme's live
+    colours, or its dead colour or a trail colour (trails are dead cells) — and
+    every grid-gap pixel is background: the picture must be an exact binary
+    image of the state, nothing blended or blurred.
     """
-    pal = view.palette
-    live = np.array([_rgb(c) for c in (pal.newborn, pal.young, pal.active, pal.recent,
-                                       pal.settled)])
-    dead, background = np.array(_rgb(pal.dead)), np.array(_rgb(pal.background))
+    live_set, dead_set = theme.live_colours(), theme.dead_colours()
+    if live_set & dead_set:
+        raise AssertionError(f"{theme.name} theme uses a colour for both live and dead cells")
+    live, dead = np.array(sorted(live_set)), np.array(sorted(dead_set))
+    background = np.array(theme.colours()[0])
     p, s, rows, cols = view.pitch, view.cell, view.rows, view.cols
     frames = []
     with Image.open(path) as im:
@@ -119,7 +117,7 @@ def decode_frames(path: Path, view) -> list[np.ndarray]:
                 raise AssertionError(f"frame {i}: something is drawn in the grid gaps")
             colour = corner[:, :, 0, 0]
             is_live = (colour[:, :, None, :] == live[None, None]).all(-1).any(-1)
-            is_dead = (colour == dead).all(-1)
+            is_dead = (colour[:, :, None, :] == dead[None, None]).all(-1).any(-1)
             if not (is_live | is_dead).all():
                 raise AssertionError(f"frame {i}: a cell has a colour outside the palette")
             frames.append(is_live)
@@ -142,8 +140,8 @@ def check_rules(frames) -> str:
             " match an independent B3/S23 implementation")
 
 
-def check_gif(path: Path, view, frames) -> tuple[str, list[set]]:
-    grids = decode_frames(path, view)
+def check_gif(path: Path, view, frames, theme) -> tuple[str, list[set]]:
+    grids = decode_frames(path, view, theme)
     shown = frames[:-1]
     if len(grids) != len(shown):
         raise AssertionError(f"GIF has {len(grids)} frames, expected {len(shown)}")
@@ -159,24 +157,28 @@ def check_gif(path: Path, view, frames) -> tuple[str, list[set]]:
             ys, xs = np.nonzero((grids[j] & known) != want)
             raise AssertionError(f"GIF frame {j} is not Conway(frame {i}) at x={xs[:5]}, y={ys[:5]}")
         checked += int(known.sum())
-    return (f"{len(decoded)} GIF frames decoded from pixels; {checked:,} cell updates checked "
-            "against B3/S23, including the wrap-around from the last frame to the first",
+    return (f"{path.name}: {len(decoded)} frames decoded from pixels; {checked:,} cell updates "
+            "checked against B3/S23, including the wrap-around from the last frame to the first",
             decoded)
 
 
-def check_loop(view, frames, render_frame, base) -> str:
+def check_loop(view, zones, frames, render_frame, themes) -> str:
+    from .renderer import base_image
     first, closing = frames[0], frames[-1]
     wa = window(first.state, view.x0, view.y0, view.cols, view.rows)
     wb = window(closing.state, view.x0, view.y0, view.cols, view.rows)
     if wa != wb:
         raise AssertionError("window(START + LOOP) != window(START)")
-    ia, ib = render_frame(view, first, base), render_frame(view, closing, base)
-    # the caption shows the generation number, so compare the grid only
-    grid = (0, 0, *view.grid_size)
-    if ia.crop(grid).tobytes() != ib.crop(grid).tobytes():
-        raise AssertionError("loop closes on the right cells but with different colours")
+    grid = (0, 0, *view.grid_size)       # the caption shows the generation number
+    for theme in themes:
+        base = base_image(view, theme)
+        ia = render_frame(view, zones, first, base)
+        ib = render_frame(view, zones, closing, base)
+        if ia.crop(grid).tobytes() != ib.crop(grid).tobytes():
+            raise AssertionError(f"{theme.name}: loop closes on the right cells but renders differently")
     return (f"gen {closing.generation} window == gen {first.generation} window "
-            f"({len(wa)} live cells) and renders pixel-identically")
+            f"({len(wa)} live cells) and renders pixel-identically in "
+            f"{' and '.join(t.name for t in themes)}")
 
 
 def check_print_job() -> str:
@@ -206,6 +208,23 @@ def check_print_job() -> str:
             "the identical block")
 
 
+def check_satellite() -> str:
+    """Each satellite copy, 340 cells after entering, is still exactly an LWSS."""
+    scene = comp.build_scene()
+    entry = comp.satellite_entry()
+    due = {comp.START + k * comp.LOOP + comp.SATELLITE_TIME + 4 * 170: k
+           for k in comp.SATELLITE_COPIES if k <= 1}
+    state = scene.cells
+    t = 0
+    for gen in sorted(due):
+        state, t = advance(state, gen - t), gen
+        expected = frozenset((x + 340, y) for x, y in entry)
+        x0 = min(x for x, _ in expected) - 6
+        if window(state, x0, -4, 20, 14) != expected:
+            raise AssertionError(f"satellite copy {due[gen]} did not survive its pass")
+    return f"{len(due)} satellite passes cross the sky and leave intact"
+
+
 def check_manifest(decoded: list[set]) -> str:
     from .generate import state_hash
     data = json.loads(MANIFEST.read_text())
@@ -218,33 +237,38 @@ def check_manifest(decoded: list[set]) -> str:
 
 
 def main() -> int:
-    from .generate import render_frame, simulate, view
-    from .renderer import base_image
+    from .generate import GIF_NAMES, render_frame, simulate, view, zone_map
+    from .renderer import THEMES
 
     v = view()
+    zones = zone_map(v)
     print("simulating …", flush=True)
     frames = simulate()
     results = [("rules", lambda: check_rules(frames))]
     decoded: list[set] = []
 
-    def gif():
-        text, d = check_gif(GIF, v, frames)
-        decoded.extend(d)
-        return text
+    def gif(theme):
+        def run():
+            text, d = check_gif(ASSETS / GIF_NAMES[theme.name], v, frames, theme)
+            if not decoded:
+                decoded.extend(d)
+            return text
+        return run
 
+    results += [(f"gif {t.name}", gif(t)) for t in THEMES]
     results += [
-        ("gif", gif),
-        ("loop", lambda: check_loop(v, frames, render_frame, base_image(v))),
+        ("loop", lambda: check_loop(v, zones, frames, render_frame, THEMES)),
         ("print job", check_print_job),
+        ("satellite", check_satellite),
         ("manifest", lambda: check_manifest(decoded)),
     ]
     ok = True
     for name, fn in results:
         try:
-            print(f"  ✓ {name:<9} {fn()}", flush=True)
+            print(f"  ✓ {name:<10} {fn()}", flush=True)
         except AssertionError as e:
             ok = False
-            print(f"  ✗ {name:<9} {e}", flush=True)
+            print(f"  ✗ {name:<10} {e}", flush=True)
     print("verified: every displayed frame is an exact Conway generation" if ok else "FAILED")
     return 0 if ok else 1
 
