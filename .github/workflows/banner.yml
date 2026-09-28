@@ -1,0 +1,28 @@
+name: banner
+
+# Verifies the Life engine and the committed banner. It never regenerates or
+# commits the banner: the GIF only changes when the composition does.
+on:
+  push:
+    paths: ["life/**", "tests/**", "tools/**", "assets/**", "requirements.txt", ".github/workflows/banner.yml"]
+  pull_request:
+    paths: ["life/**", "tests/**", "tools/**", "assets/**", "requirements.txt", ".github/workflows/banner.yml"]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Unit tests
+        run: pytest -q
+      - name: Committed GIF is Conway's Life, frame by frame
+        run: python -m life.verify
+      - name: Regenerating reproduces the committed simulation
+        run: |
+          python -m life.generate --out "$RUNNER_TEMP/banner"
+          diff assets/life-banner.json "$RUNNER_TEMP/banner/life-banner.json"
