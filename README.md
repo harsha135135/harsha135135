@@ -5,5 +5,3 @@
   </a>
 </p>
 
-
-<sub>Banner: my own Life engine in Python, no Life libraries. <code>python -m life.generate</code> renders it; <code>python -m life.verify</code> decodes the GIF back into cells and checks every one of its 7.8 million cell updates against B3/S23.</sub>
